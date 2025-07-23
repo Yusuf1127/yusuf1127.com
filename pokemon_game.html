@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Pokemon Dövüş Oyunu</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80') center/cover no-repeat fixed, #b6e388;
+            min-height: 100vh;
+        }
+        .container { max-width: 500px; margin: 40px auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px #aaa; }
+        h1 { text-align: center; }
+        .pokemon-list, .moves-list { margin: 16px 0; }
+        button { margin: 6px 0; padding: 8px 16px; border-radius: 6px; border: none; background: #4caf50; color: #fff; cursor: pointer; }
+        button:disabled { background: #aaa; }
+        .status { margin: 12px 0; font-weight: bold; }
+        .vs { text-align: center; font-size: 1.2em; margin: 12px 0; }
+        .poke-anim {
+            animation: attackAnim 0.25s linear 1;
+        }
+        @keyframes attackAnim {
+            0% { transform: translateX(0); }
+            30% { transform: translateX(-20px); }
+            60% { transform: translateX(20px); }
+            100% { transform: translateX(0); }
+        }
+        /* Efektler için ortak stil */
+        .effect-anim {
+            position: absolute;
+            left: 60px;
+            top: 10px;
+            width: 80px;
+            height: 80px;
+            pointer-events: none;
+            z-index: 10;
+            animation: effect-move 4s linear forwards;
+        }
+        @keyframes effect-move {
+            0% { left: 60px; opacity: 1; }
+            92% { opacity: 1; }
+            100% { left: 500px; opacity: 0; }
+        }
+        .effect-anim-rev {
+            left: 500px;
+            animation: effect-move-rev 4s linear forwards;
+        }
+        @keyframes effect-move-rev {
+            0% { left: 500px; opacity: 1; }
+            92% { opacity: 1; }
+            100% { left: 60px; opacity: 0; }
+        }
+        .fire-img, .electric-img, .water-img, .grass-img {
+            width: 80px; height: 80px;
+            background: none;
+        }
+        .fire-img, .electric-img, .water-img, .grass-img {
+            width: 32px; height: 32px;
+            background: none;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Pokemon Dövüş Oyunu</h1>
+    <div id="game"></div>
+</div>
+<script>
+// Oyunu baştan başlatan fonksiyon
+
+function resetGame() {
+    player = null;
+    enemy = null;
+    playerHP = null;
+    enemyHP = null;
+    showPokemonSelection();
+}
+
+// Space tuşuna basınca oyunu başlat
+window.addEventListener('keydown', function(e) {
+    if (e.code === 'Space') {
+        resetGame();
+    }
+});
+const pokemons = [
+    {
+        name: "Pikachu",
+        img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png",
+        hp: 35,
+        attack: 55,
+        defense: 30,
+        speed: 90,
+        crit: 0.2,
+        ability: "Statik: Rakip saldırdığında %20 ihtimalle sersemletir.",
+        moves: [
+            { name: "Şimşek", power: 15 },
+            { name: "Hızlı Saldırı", power: 10 }
+        ]
+    },
+    {
+        name: "Charmander",
+        img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/4.png",
+        hp: 39,
+        attack: 52,
+        defense: 43,
+        speed: 65,
+        crit: 0.15,
+        ability: "Alev Gövde: Saldırı yaptığında %15 ihtimalle ekstra yanma hasarı.",
+        moves: [
+            { name: "Alev Püskürt", power: 16 },
+            { name: "Pençe", power: 12 }
+        ]
+    },
+    {
+        name: "Bulbasaur",
+        img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png",
+        hp: 45,
+        attack: 49,
+        defense: 49,
+        speed: 45,
+        crit: 0.1,
+        ability: "Sentez: Her tur %10 ihtimalle 5 HP yeniler.",
+        moves: [
+            { name: "Asma Kamçısı", power: 14 },
+            { name: "Tohum Bombası", power: 13 }
+        ]
+    },
+    {
+        name: "Squirtle",
+        img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/7.png",
+        hp: 44,
+        attack: 48,
+        defense: 55, // Savunma düşürüldü
+        speed: 43,
+        crit: 0.08,
+        ability: "Kabuk Zırhı: %20 ihtimalle gelen hasarı yarıya indirir.",
+        moves: [
+            { name: "Su Tabancası", power: 13 },
+            { name: "Kafa Atışı", power: 11 }
+        ]
+    }
+];
+
+let player, enemy, playerHP, enemyHP, gameDiv = document.getElementById('game');
+
+// Efektleri göstermek için ana container'a ekleyeceğiz
+function showEffect(type, fromPlayer = true) {
+    // Sadece battle ekranında çalışır
+    const vsDiv = document.querySelector('.vs');
+    if (!vsDiv) return;
+    vsDiv.style.position = 'relative';
+    let effectDiv = document.createElement('div');
+    let imgHtml = '';
+    // Yedek görsel url'si
+    const fallback = 'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg';
+    if (type === 'fire') {
+        imgHtml = `<img src="https://cdn.pixabay.com/photo/2013/07/12/13/58/flame-147409_1280.png" class="fire-img" alt="Ateş" onerror="this.onerror=null;this.src='${fallback}'">`;
+    } else if (type === 'electric') {
+        imgHtml = `<img src="https://cdn.pixabay.com/photo/2013/07/13/12/46/lightning-160113_1280.png" class="electric-img" alt="Elektrik" onerror="this.onerror=null;this.src='${fallback}'">`;
+    } else if (type === 'water') {
+        imgHtml = `<img src="https://cdn.pixabay.com/photo/2014/04/03/10/32/water-312588_1280.png" class="water-img" alt="Su" onerror="this.onerror=null;this.src='${fallback}'">`;
+    } else if (type === 'grass') {
+        imgHtml = `<img src="https://cdn.pixabay.com/photo/2013/07/13/12/46/leaf-160113_1280.png" class="grass-img" alt="Yaprak" onerror="this.onerror=null;this.src='${fallback}'">`;
+    } else {
+        imgHtml = `<svg width="80" height="80"><circle cx="40" cy="40" r="32" fill="#bbb" /></svg>`;
+    }
+    // Pozisyonları karakter görsellerine göre ayarla
+    const playerImg = document.getElementById('player-img');
+    const enemyImg = document.getElementById('enemy-img');
+    let startLeft = 60, endLeft = 500, top = 10;
+    if (playerImg && enemyImg) {
+        // .vs div'inin konumunu ve genişliğini al
+        const vsRect = vsDiv.getBoundingClientRect();
+        const playerRect = playerImg.getBoundingClientRect();
+        const enemyRect = enemyImg.getBoundingClientRect();
+        // Başlangıç ve bitiş noktalarını hesapla
+        if (fromPlayer) {
+            startLeft = playerRect.left - vsRect.left + playerRect.width/2 - 40;
+            endLeft = enemyRect.left - vsRect.left + enemyRect.width/2 - 40 + 400;
+            top = playerRect.top - vsRect.top + playerRect.height/2 - 40;
+        } else {
+            startLeft = enemyRect.left - vsRect.left + enemyRect.width/2 - 40;
+            endLeft = playerRect.left - vsRect.left + playerRect.width/2 - 40 - 400;
+            top = enemyRect.top - vsRect.top + enemyRect.height/2 - 40;
+        }
+    }
+    effectDiv.style.position = 'absolute';
+    effectDiv.style.left = startLeft + 'px';
+    effectDiv.style.top = top + 'px';
+    effectDiv.style.width = '80px';
+    effectDiv.style.height = '80px';
+    effectDiv.style.pointerEvents = 'none';
+    effectDiv.style.zIndex = 10;
+    effectDiv.innerHTML = imgHtml;
+    // Animasyon
+    effectDiv.animate([
+        { left: startLeft + 'px', opacity: 1 },
+        { left: endLeft + 'px', opacity: 1, offset: 0.92 },
+        { left: endLeft + 'px', opacity: 0 }
+    ], {
+        duration: 4000,
+        easing: 'linear',
+        fill: 'forwards'
+    });
+    vsDiv.appendChild(effectDiv);
+    setTimeout(() => { effectDiv.remove(); }, 4000);
+}
+function showPokemonSelection() {
+    gameDiv.innerHTML = '<div class="pokemon-list"><b>Bir Pokémon seç:</b><br>' +
+        pokemons.map((p, i) =>
+            `<button onclick="selectPokemon(${i})" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                <img src="${p.img}" alt="${p.name}" width="60" height="60" style="background:#eee;border-radius:8px;">
+                <span>
+                    <b>${p.name}</b> (HP: ${p.hp}, Atk: ${p.attack}, Def: ${p.defense}, Hız: ${p.speed})<br>
+                    <span style='font-size:0.9em;color:#555'>Yetenek: ${p.ability}</span>
+                </span>
+            </button>`
+        ).join('') +
+        '</div>';
+}
+
+function selectPokemon(idx) {
+    player = JSON.parse(JSON.stringify(pokemons[idx]));
+    let enemies = pokemons.filter((_, i) => i !== idx);
+    enemy = JSON.parse(JSON.stringify(enemies[Math.floor(Math.random()*enemies.length)]));
+    // Tüm statlar eşitleniyor
+    enemy.attack = player.attack;
+    enemy.defense = player.defense;
+    enemy.crit = player.crit;
+    enemy.hp = player.hp;
+    enemy.speed = player.speed;
+    enemyHP = enemy.hp;
+    playerHP = player.hp;
+    showBattle();
+}
+
+function showBattle(statusMsg = "", anim = null) {
+    // Bilgilendirici yazılar üstte, karakterler ve güçler altta
+    gameDiv.innerHTML =
+        (statusMsg ? `<div class="status">${statusMsg}</div>` : "") +
+        '<div class="moves-list"><b>Hamle seç:</b><br>' +
+        player.moves.map((m, i) => `<button onclick="playerMove(${i})">${m.name} (Güç: ${m.power})</button>`).join('<br>') +
+        '</div>' +
+        `<div class="vs" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;">
+            <div style="text-align:center;">
+                <img id="player-img" src="${player.img}" alt="${player.name}" width="80" height="80" style="background:#eee;border-radius:8px;"><br>
+                <b>${player.name}</b><br>(HP: ${playerHP}/${player.hp}, Hız: ${player.speed})<br>
+                <span style='font-size:0.9em;color:#555'>Yetenek: ${player.ability}</span>
+            </div>
+            <span style="font-size:1.5em;">VS</span>
+            <div style="text-align:center;">
+                <img id="enemy-img" src="${enemy.img}" alt="${enemy.name}" width="80" height="80" style="background:#eee;border-radius:8px;"><br>
+                <b>${enemy.name}</b><br>(HP: ${enemyHP}/${enemy.hp}, Hız: ${enemy.speed})<br>
+                <span style='font-size:0.9em;color:#555'>Yetenek: ${enemy.ability}</span>
+            </div>
+        </div>`;
+    // Animasyon uygula
+    if (anim === 'player') {
+        const img = document.getElementById('player-img');
+        img.classList.remove('poke-anim');
+        void img.offsetWidth; // reflow
+        img.classList.add('poke-anim');
+    } else if (anim === 'enemy') {
+        const img = document.getElementById('enemy-img');
+        img.classList.remove('poke-anim');
+        void img.offsetWidth;
+        img.classList.add('poke-anim');
+    }
+}
+
+function playerMove(moveIdx) {
+    let move = player.moves[moveIdx];
+    let first, second, firstMove, secondMove, firstIsPlayer;
+    // Hız karşılaştırması
+    if (player.speed > enemy.speed || (player.speed === enemy.speed && Math.random() < 0.5)) {
+        first = player; second = enemy; firstMove = move; firstIsPlayer = true;
+    } else {
+        first = enemy; second = player; firstMove = enemy.moves[Math.floor(Math.random()*enemy.moves.length)]; firstIsPlayer = false;
+    }
+    let log = "";
+    // Efekt: Özelliğe göre göster (her hamlede mutlaka efekt)
+    function getEffectType(poke, moveName) {
+        if (poke.name === "Charmander" || moveName.includes("Alev")) return 'fire';
+        if (poke.name === "Pikachu" || moveName.includes("Şimşek")) return 'electric';
+        if (poke.name === "Squirtle" || moveName.includes("Su")) return 'water';
+        if (poke.name === "Bulbasaur" || moveName.includes("Asma") || moveName.includes("Tohum")) return 'grass';
+        return 'neutral';
+    }
+    let effectType = getEffectType(first, firstMove.name);
+    // Önce battle ekranını güncelle, sonra efektleri tetikle (ilk turda da kesin çıkar)
+    showBattle(undefined, firstIsPlayer ? 'player' : 'enemy');
+    setTimeout(() => {
+        showEffect(effectType, true);
+        setTimeout(() => { showEffect(effectType, false); }, 120);
+    }, 10);
+    setTimeout(() => {
+        let dmg1 = calculateDamage(first, second, firstMove);
+        let crit1 = Math.random() < first.crit;
+        if (crit1) dmg1 = Math.floor(dmg1 * 1.5);
+        // Kabuk Zırhı yeteneği
+        if (second.ability && second.ability.includes("Kabuk Zırhı") && Math.random() < 0.2) {
+            dmg1 = Math.floor(dmg1 / 2);
+            log += `<br>${second.name} Kabuk Zırhı ile hasarı azalttı!`;
+        }
+        if (firstIsPlayer) {
+            enemyHP = Math.max(0, enemyHP - dmg1);
+            log = `${player.name}, ${move.name} kullandı! ${enemy.name} ${dmg1} hasar aldı!` + (crit1 ? " <b>(Kritik!)</b>" : "") + log;
+        } else {
+            playerHP = Math.max(0, playerHP - dmg1);
+            log = `${enemy.name}, ${firstMove.name} kullandı! ${player.name} ${dmg1} hasar aldı!` + (crit1 ? " <b>(Kritik!)</b>" : "") + log;
+        }
+        // Sentez yeteneği
+        if (first.ability && first.ability.includes("Sentez") && Math.random() < 0.1) {
+            if (firstIsPlayer) { playerHP = Math.min(player.hp, playerHP + 5); log += `<br>${player.name} Sentez ile 5 HP yeniledi!`; }
+            else { enemyHP = Math.min(enemy.hp, enemyHP + 5); log += `<br>${enemy.name} Sentez ile 5 HP yeniledi!`; }
+        }
+        // Statik yeteneği
+        if (second.ability && second.ability.includes("Statik") && Math.random() < 0.2) {
+            log += `<br>${second.name} Statik ile rakibi sersemletti! (Bir sonraki saldırı zayıf)`;
+            // Sersemletme: bir sonraki saldırı %50 güçte olacak (basitçe uygulanıyor)
+            if (firstIsPlayer) player.stunned = true; else enemy.stunned = true;
+        }
+        // Alev Gövde yeteneği
+        if (first.ability && first.ability.includes("Alev Gövde") && Math.random() < 0.15) {
+            if (firstIsPlayer) { enemyHP = Math.max(0, enemyHP - 5); log += `<br>${enemy.name} yandı! (5 ek hasar)`; }
+            else { playerHP = Math.max(0, playerHP - 5); log += `<br>${player.name} yandı! (5 ek hasar)`; }
+        }
+        if ((firstIsPlayer && enemyHP <= 0) || (!firstIsPlayer && playerHP <= 0)) {
+            showBattle(log + `<br><span style='color:${firstIsPlayer ? 'green' : 'red'};font-size:2em;font-weight:bold;'>${firstIsPlayer ? 'Kazandın!' : 'Kaybettin.'}</span>`);
+            disableMoveButtons();
+            return;
+        }
+        // İkinci saldırı
+        setTimeout(() => {
+            let secondMove;
+            if (firstIsPlayer) {
+                secondMove = enemy.moves[Math.floor(Math.random()*enemy.moves.length)];
+            } else {
+                secondMove = move;
+            }
+            let effectType2 = getEffectType(second, secondMove.name);
+            showBattle(undefined, firstIsPlayer ? 'enemy' : 'player');
+            setTimeout(() => {
+                showEffect(effectType2, false);
+                setTimeout(() => { showEffect(effectType2, true); }, 120);
+            }, 10);
+            setTimeout(() => {
+                let dmg2 = calculateDamage(second, first, secondMove);
+                // Sersemletme etkisi
+                if ((second.stunned)) { dmg2 = Math.floor(dmg2 / 2); second.stunned = false; }
+                let crit2 = Math.random() < second.crit;
+                if (crit2) dmg2 = Math.floor(dmg2 * 1.5);
+                // Kabuk Zırhı yeteneği
+                if (first.ability && first.ability.includes("Kabuk Zırhı") && Math.random() < 0.2) {
+                    dmg2 = Math.floor(dmg2 / 2);
+                    log += `<br>${first.name} Kabuk Zırhı ile hasarı azalttı!`;
+                }
+                if (firstIsPlayer) {
+                    playerHP = Math.max(0, playerHP - dmg2);
+                    log += `<br>${enemy.name}, ${secondMove.name} kullandı! ${player.name} ${dmg2} hasar aldı!` + (crit2 ? " <b>(Kritik!)</b>" : "");
+                } else {
+                    enemyHP = Math.max(0, enemyHP - dmg2);
+                    log += `<br>${player.name}, ${secondMove.name} kullandı! ${enemy.name} ${dmg2} hasar aldı!` + (crit2 ? " <b>(Kritik!)</b>" : "");
+                }
+                // Sentez yeteneği
+                if (second.ability && second.ability.includes("Sentez") && Math.random() < 0.1) {
+                    if (firstIsPlayer) { enemyHP = Math.min(enemy.hp, enemyHP + 5); log += `<br>${enemy.name} Sentez ile 5 HP yeniledi!`; }
+                    else { playerHP = Math.min(player.hp, playerHP + 5); log += `<br>${player.name} Sentez ile 5 HP yeniledi!`; }
+                }
+                // Statik yeteneği
+                if (first.ability && first.ability.includes("Statik") && Math.random() < 0.2) {
+                    log += `<br>${first.name} Statik ile rakibi sersemletti! (Bir sonraki saldırı zayıf)`;
+                    if (firstIsPlayer) enemy.stunned = true; else player.stunned = true;
+                }
+                // Alev Gövde yeteneği
+                if (second.ability && second.ability.includes("Alev Gövde") && Math.random() < 0.15) {
+                    if (firstIsPlayer) { playerHP = Math.max(0, playerHP - 5); log += `<br>${player.name} yandı! (5 ek hasar)`; }
+                    else { enemyHP = Math.max(0, enemyHP - 5); log += `<br>${enemy.name} yandı! (5 ek hasar)`; }
+                }
+                if ((firstIsPlayer && playerHP <= 0) || (!firstIsPlayer && enemyHP <= 0)) {
+                    showBattle(log + `<br><span style='color:${firstIsPlayer ? 'red' : 'green'};font-size:2em;font-weight:bold;'>${firstIsPlayer ? 'Kaybettin.' : 'Kazandın!'}</span>`);
+                    disableMoveButtons();
+                    return;
+                }
+                showBattle(log);
+            }, 250);
+        }, 250);
+    }, 250);
+}
+function enemyTurn(prevMsg) {
+    let move = enemy.moves[Math.floor(Math.random()*enemy.moves.length)];
+    let damage = calculateDamage(enemy, player, move);
+    playerHP = Math.max(0, playerHP - damage);
+    let msg = prevMsg + `<br>${enemy.name}, ${move.name} kullandı! ${player.name} ${damage} hasar aldı!`;
+    if (playerHP <= 0) {
+        showBattle(msg + `<br><span style='color:red;font-size:2em;font-weight:bold;'>Kaybettin.</span>`);
+        disableMoveButtons();
+        return;
+    }
+    showBattle(msg);
+}
+
+function calculateDamage(attacker, defender, move) {
+    let base = attacker.attack + move.power - defender.defense;
+    let rand = Math.floor(Math.random()*5)-2;
+    // Minimum hasar 5 olsun ki oyun tıkanmasın
+    return Math.max(5, base + rand);
+}
+
+function disableMoveButtons() {
+    document.querySelectorAll('.moves-list button').forEach(btn => btn.disabled = true);
+}
+
+showPokemonSelection();
+</script>
+</body>
+</html>
